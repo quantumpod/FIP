@@ -11,7 +11,7 @@ import { ConnectionForm } from "./connection-form";
 import type { MarketplaceConnection } from "@/types/integrations";
 import type { Marketplace } from "@/types/listing";
 import {
-  Plus, Loader2, PlugZap, RefreshCw, Trash2, CheckCircle2, XCircle, ShieldCheck,
+  Plus, Loader2, PlugZap, RefreshCw, Trash2, CheckCircle2, XCircle, ShieldCheck, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,6 +19,7 @@ export function ConnectionsList() {
   const [connections, setConnections] = useState<MarketplaceConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editConn, setEditConn] = useState<MarketplaceConnection | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [validating, setValidating] = useState<string | null>(null);
 
@@ -114,6 +115,19 @@ export function ConnectionsList() {
         </Dialog>
       </div>
 
+      {/* Edit dialog */}
+      <Dialog open={!!editConn} onOpenChange={o => { if (!o) setEditConn(null); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Connection</DialogTitle></DialogHeader>
+          {editConn && (
+            <ConnectionForm
+              connection={editConn}
+              onSuccess={() => { setEditConn(null); load(); }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       {connections.length === 0 ? (
         <div className="flex flex-col items-center py-16 text-center text-muted-foreground">
           <PlugZap className="h-10 w-10 opacity-20 mb-3" />
@@ -182,7 +196,7 @@ export function ConnectionsList() {
                   </Button>
                 )}
 
-                {/* Toggle + Delete */}
+                {/* Toggle + Edit + Delete */}
                 <div className="flex items-center justify-between pt-1 border-t border-border/40">
                   <Button
                     size="sm"
@@ -195,14 +209,24 @@ export function ConnectionsList() {
                       : <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Activate</>
                     }
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs text-destructive hover:text-destructive gap-1"
-                    onClick={() => deleteConn(conn)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Delete
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setEditConn(conn)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-destructive hover:text-destructive gap-1"
+                      onClick={() => deleteConn(conn)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

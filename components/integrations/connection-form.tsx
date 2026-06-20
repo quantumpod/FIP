@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { CONNECTOR_FIELDS } from "@/types/integrations";
+import type { MarketplaceConnection } from "@/types/integrations";
 import type { Marketplace } from "@/types/listing";
 
 const MARKETPLACES: { value: Marketplace; label: string }[] = [
@@ -18,10 +19,24 @@ const MARKETPLACES: { value: Marketplace; label: string }[] = [
   { value: "VEEQO", label: "Veeqo" },
 ];
 
-export function ConnectionForm({ onSuccess }: { onSuccess: () => void }) {
-  const [marketplace, setMarketplace] = useState<Marketplace | "">("");
-  const [name, setName] = useState("");
-  const [values, setValues] = useState<Record<string, string>>({});
+interface Props {
+  onSuccess: () => void;
+  connection?: MarketplaceConnection; // if provided → edit mode
+}
+
+export function ConnectionForm({ onSuccess, connection }: Props) {
+  const isEdit = !!connection;
+
+  const [marketplace, setMarketplace] = useState<Marketplace | "">(
+    connection ? connection.marketplace : ""
+  );
+  const [name, setName] = useState(connection?.name ?? "");
+  const [values, setValues] = useState<Record<string, string>>(
+    // pre-fill from existing credentials + settings (passwords shown as empty — user must re-enter)
+    connection
+      ? { ...(connection.settings as Record<string, string> ?? {}), ...(connection.credentials as Record<string, string> ?? {}) }
+      : {}
+  );
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
 
@@ -46,13 +61,23 @@ export function ConnectionForm({ onSuccess }: { onSuccess: () => void }) {
 
     setSaving(true);
     try {
-      const res = await fetch("/api/integrations/connections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ marketplace, name, credentials, settings }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Error");
-      toast.success("Connection created");
+      if (isEdit) {
+        const res = await fetch(`/api/integrations/connections/${connection.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, credentials, settings }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error ?? "Error");
+        toast.success("Connection updated");
+      } else {
+        const res = await fetch("/api/integrations/connections", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ marketplace, name, credentials, settings }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error ?? "Error");
+        toast.success("Connection created");
+      }
       onSuccess();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Error");
@@ -66,7 +91,11 @@ export function ConnectionForm({ onSuccess }: { onSuccess: () => void }) {
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label>Marketplace *</Label>
-          <Select value={marketplace} onValueChange={v => { setMarketplace(v as Marketplace); setValues({}); }}>
+          <Select
+            value={marketplace}
+            onValueChange={v => { setMarketplace(v as Marketplace); setValues({}); }}
+            disabled={isEdit}
+          >
             <SelectTrigger><SelectValue placeholder="Select marketplace" /></SelectTrigger>
             <SelectContent>
               {MARKETPLACES.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
@@ -90,7 +119,7 @@ export function ConnectionForm({ onSuccess }: { onSuccess: () => void }) {
                   type={field.type === "password" && !showSecrets[field.key] ? "password" : "text"}
                   value={values[field.key] ?? ""}
                   onChange={e => setVal(field.key, e.target.value)}
-                  placeholder={field.placeholder}
+                  placeholder={isEdit && field.type === "password" ? "Leave blank to keep current" : field.placeholder}
                   className="font-mono text-sm pr-10"
                 />
                 {field.type === "password" && (
@@ -112,7 +141,7 @@ export function ConnectionForm({ onSuccess }: { onSuccess: () => void }) {
       <div className="flex justify-end pt-2">
         <Button type="submit" disabled={saving}>
           {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-          Create Connection
+          {isEdit ? "Save Changes" : "Create Connection"}
         </Button>
       </div>
     </form>
