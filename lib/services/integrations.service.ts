@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { runConnectorSync } from "@/lib/connectors";
 
 const connectionInclude = {
   syncJobs: {
@@ -127,82 +128,51 @@ export async function triggerSync(
     include: syncJobInclude,
   });
 
-  // Simulate async work — in production this would be a background job/queue
-  simulateSync(companyId, job.id, conn.marketplace, type).catch(() => {});
+  // Run real connector sync in background
+  runSync(companyId, job.id, conn.marketplace, type, conn.credentials as Record<string, string> ?? {}, conn.settings as Record<string, string> ?? {}).catch(() => {});
 
   return job;
 }
 
-async function simulateSync(
+async function runSync(
   companyId: string,
   jobId: string,
   marketplace: string,
-  type: string
+  type: string,
+  credentials: Record<string, string>,
+  settings: Record<string, string>
 ) {
-  await new Promise((r) => setTimeout(r, 2000));
-
-  if (type === "ORDERS") {
-    // Simulate importing 3 orders
-    const products = await prisma.product.findMany({
-      where: { companyId },
-      take: 2,
-      select: { id: true },
-    });
-
-    let imported = 0;
-    if (products.length > 0) {
-      for (let i = 0; i < 3; i++) {
-        const orderNum = `#SYN-${Date.now()}-${i}`;
-        const existing = await prisma.order.findFirst({
-          where: { companyId, orderNumber: orderNum },
-        });
-        if (!existing) {
-          const order = await prisma.order.create({
-            data: {
-              companyId,
-              marketplace: marketplace as never,
-              orderNumber: orderNum,
-              externalOrderId: `EXT-${Date.now()}-${i}`,
-              status: "NEW",
-            },
-          });
-          await prisma.orderItem.create({
-            data: {
-              orderId: order.id,
-              productId: products[i % products.length].id,
-              quantity: Math.ceil(Math.random() * 5) + 1,
-            },
-          });
-          imported++;
-        }
-      }
-    }
-
+  let result = { imported: 0, skipped: 0, errors: [] as string[] };
+  try {
+    result = await runConnectorSync(companyId, marketplace, type, credentials, settings);
     await prisma.syncJob.update({
       where: { id: jobId },
       data: {
-        status: "COMPLETED",
+        status: result.errors.length > 0 && result.imported === 0 ? "FAILED" : "COMPLETED",
         completedAt: new Date(),
-        itemsTotal: 3,
-        itemsProcessed: imported,
+        itemsProcessed: result.imported,
+        itemsTotal: result.imported + result.skipped,
+        errors: result.errors.length > 0 ? result.errors : undefined,
       },
     });
-  } else {
+  } catch (err) {
     await prisma.syncJob.update({
       where: { id: jobId },
       data: {
-        status: "COMPLETED",
+        status: "FAILED",
         completedAt: new Date(),
-        itemsTotal: 0,
-        itemsProcessed: 0,
+        errors: [(err as Error).message],
       },
     });
   }
 
-  await prisma.marketplaceConnection.update({
-    where: { id: (await prisma.syncJob.findUnique({ where: { id: jobId }, select: { connectionId: true } }))!.connectionId },
-    data: { lastSyncAt: new Date() },
-  });
+  const job = await prisma.syncJob.findUnique({ where: { id: jobId }, select: { connectionId: true } });
+  if (job) {
+    await prisma.marketplaceConnection.update({
+      where: { id: job.connectionId },
+      data: { lastSyncAt: new Date() },
+    });
+  }
 }
 
 // Webhook Logs

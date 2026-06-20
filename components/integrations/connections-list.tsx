@@ -11,7 +11,7 @@ import { ConnectionForm } from "./connection-form";
 import type { MarketplaceConnection } from "@/types/integrations";
 import type { Marketplace } from "@/types/listing";
 import {
-  Plus, Loader2, PlugZap, RefreshCw, Trash2, CheckCircle2, XCircle,
+  Plus, Loader2, PlugZap, RefreshCw, Trash2, CheckCircle2, XCircle, ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,6 +20,7 @@ export function ConnectionsList() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [validating, setValidating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,6 +57,24 @@ export function ConnectionsList() {
       load();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Error");
+    }
+  }
+
+  async function validateConn(conn: MarketplaceConnection) {
+    setValidating(conn.id);
+    try {
+      const res = await fetch(`/api/integrations/connections/${conn.id}/validate`, { method: "POST" });
+      const json = await res.json();
+      if (json.valid) {
+        toast.success("Connection validated — status set to ACTIVE");
+      } else {
+        toast.error(`Validation failed: ${json.error ?? "Invalid credentials"}`);
+      }
+      load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Error");
+    } finally {
+      setValidating(null);
     }
   }
 
@@ -144,6 +163,23 @@ export function ConnectionsList() {
                       </Button>
                     ))}
                   </div>
+                )}
+
+                {/* Test Connection */}
+                {conn.marketplace !== "MANUAL" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 w-full"
+                    disabled={validating === conn.id}
+                    onClick={() => validateConn(conn)}
+                  >
+                    {validating === conn.id
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <ShieldCheck className="h-3.5 w-3.5" />
+                    }
+                    Test Connection
+                  </Button>
                 )}
 
                 {/* Toggle + Delete */}
