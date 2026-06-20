@@ -11,7 +11,7 @@ function headers(apiKey: string) {
 
 export async function veeqoFetchOrders(apiKey: string, page = 1): Promise<ConnectorOrder[]> {
   const res = await fetch(
-    `${BASE_URL}/orders?status=allocated&page_size=50&page=${page}`,
+    `${BASE_URL}/orders?page_size=50&page=${page}`,
     { headers: headers(apiKey) }
   );
   if (!res.ok) throw new Error(`Veeqo orders error: ${res.status} ${await res.text()}`);
@@ -34,8 +34,6 @@ export async function veeqoValidate(apiKey: string): Promise<boolean> {
   return res.ok;
 }
 
-// ── Result builders (used by dispatcher) ──────────────────────────────────────
-
 export async function syncVeeqoOrders(
   apiKey: string,
   importer: (orders: ConnectorOrder[]) => Promise<SyncResult>
@@ -57,8 +55,16 @@ export async function syncVeeqoInventory(
 interface VeeqoOrder {
   id: number;
   number: string;
-  shipments?: { tracking_number?: string; carrier?: string }[];
+  allocations?: VeeqoAllocation[];
   line_items?: VeeqoLineItem[];
+}
+
+interface VeeqoAllocation {
+  shipment?: {
+    tracking_number?: { tracking_number?: string } | string;
+    service_carrier_name?: string;
+    short_service_name?: string;
+  };
 }
 
 interface VeeqoLineItem {
@@ -79,13 +85,22 @@ interface VeeqoVariant {
   inventory_entries?: { physical_count_on_hand?: number }[];
 }
 
+function extractTracking(alloc?: VeeqoAllocation): { tracking?: string; carrier?: string } {
+  if (!alloc?.shipment) return {};
+  const ship = alloc.shipment;
+  const tn = ship.tracking_number;
+  const tracking = typeof tn === "object" ? tn?.tracking_number : tn;
+  const carrier = ship.service_carrier_name ?? ship.short_service_name;
+  return { tracking: tracking ?? undefined, carrier: carrier ?? undefined };
+}
+
 function mapOrder(o: VeeqoOrder): ConnectorOrder {
-  const shipment = o.shipments?.[0];
+  const { tracking, carrier } = extractTracking(o.allocations?.[0]);
   return {
     externalId: String(o.id),
     orderNumber: o.number ?? `VEEQO-${o.id}`,
-    trackingNumber: shipment?.tracking_number ?? undefined,
-    carrier: shipment?.carrier ?? undefined,
+    trackingNumber: tracking,
+    carrier,
     items: (o.line_items ?? []).map((li) => ({
       sellerSku: li.sellable?.sku_code ?? `VEEQO-ITEM-${li.id}`,
       quantity: li.quantity,
