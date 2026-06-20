@@ -30,7 +30,7 @@ export async function veeqoFetchProducts(apiKey: string, page = 1): Promise<Conn
 }
 
 export async function veeqoValidate(apiKey: string): Promise<boolean> {
-  const res = await fetch(`${BASE_URL}/company`, { headers: headers(apiKey) });
+  const res = await fetch(`${BASE_URL}/orders?page_size=1`, { headers: headers(apiKey) });
   return res.ok;
 }
 
